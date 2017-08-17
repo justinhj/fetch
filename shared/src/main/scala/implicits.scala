@@ -16,94 +16,60 @@
 
 package fetch
 
-
 import java.util.{Timer, TimerTask}
 import java.util.concurrent.TimeoutException
 import scala.concurrent.duration._
 import cats.instances.future._
-import cats.MonadError
 import scala.concurrent.{ExecutionContext, Future, Promise}
 
 object implicits {
 
   // Shared Timer object to schedule timeouts
-  val timer: Timer = new Timer()
+  private[fetch] lazy val timer: Timer = new Timer("fetch-future-timeout-daemon", true)
 
-
- implicit def fetchFutureFetchMonadError(implicit ec: ExecutionContext): FetchMonadError[Future] =
+  implicit def fetchFutureFetchMonadError(implicit ec: ExecutionContext): FetchMonadError[Future] =
     new FetchMonadError.FromMonadError[Future] {
       override def runQuery[A](j: Query[A]): Future[A] = j match {
 
-        case Sync(e) => {
-          Future.successful({e.value})
-        }
+        case Sync(e) =>
+          Future({e.value})
 
-        case Async(ac, timeout) => {
+        case Async(ac, timeout) =>
 
           val p = Promise[A]()
 
+          val runnable = new Runnable {
+            def run() : Unit = ac(p.trySuccess, p.tryFailure)
+          }
+
           timeout match {
+
+            // Handle the case where there is a finite timeout requested
             case finite: FiniteDuration =>
 
               // Timer task that completes the future when the timeout occurs
               // if it didn't complete already
               val timerTask = new TimerTask() {
                 def run() : Unit = {
-                  p.synchronized {
-                    if(!p.isCompleted) {
-                      p.failure(new TimeoutException())
-                    }
-                  }
-                }
-              }
-
-              // Callback on success, has no effect if the timeout occured
-              val successComplete : Query.Callback[A] = {
-                a =>
-                p.synchronized {
-                  if(!p.isCompleted) {
-                    p.success(a)
-                  }
-                }
-              }
-
-              // Callback on failure, has no effect after timeout
-              val failureComplete : Query.Errback = {
-                err =>
-                p.synchronized {
-                  if(!p.isCompleted) {
-
-                    p.failure(err)
-                  }
+                  p.tryFailure(new TimeoutException())
                 }
               }
 
               // Start the timeout Timer
-              implicits.timer.schedule(timerTask, timeout.toMillis)
+              timer.schedule(timerTask, timeout.toMillis)
 
               // Execute the user's action
-              ec.execute(new Runnable {
-                def run() = {
-                  ac(successComplete, failureComplete)
-                }
-              })
+              ec.execute(runnable)
 
             // No timeout 
             case _ =>
 
               // Execute the user's action
-              ec.execute(new Runnable {
-                def run() = {
-                  ac(p.trySuccess _, p.tryFailure _)
-                }
-              })
-
+              ec.execute(runnable)
           }
 
-
-
           p.future
-        }
+
         case Ap(qf, qx) =>
           runQuery(qf).zip(runQuery(qx)).map { case (f, x) => f(x) }
       }
