@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2017 47 Degrees, LLC. <http://www.47deg.com>
+ * Copyright 2016-2018 47 Degrees, LLC. <http://www.47deg.com>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,7 +27,6 @@ object FetchMonadError {
 
   abstract class FromMonadError[M[_]](implicit ME: MonadError[M, Throwable])
       extends FetchMonadError[M] {
-    def runQuery[A](q: Query[A]): M[A]
 
     def pure[A](x: A): M[A] =
       ME.pure(x)

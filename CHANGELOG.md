@@ -1,5 +1,61 @@
 # Changelog
 
+## 08/21/2018 - Version 0.7.3
+
+Release changes:
+
+* Updated sbt-org-policies version to 0.9.1 ([#150](https://github.com/47deg/fetch/pull/150))
+* Release Fetch v0.7.3  ([#151](https://github.com/47deg/fetch/pull/151))
+
+
+## 06/13/2018 - Version 0.7.3
+
+Release changes:
+
+* Updated sbt-org-policies version to 0.9.1 ([#150](https://github.com/47deg/fetch/pull/150))
+* Release Fetch v0.7.3  ([#151](https://github.com/47deg/fetch/pull/151))
+
+
+## 01/23/2018 - Version 0.7.2
+
+Release changes:
+
+* Update dependencies, especially to cats 1.0.1 ([#146](https://github.com/47deg/fetch/pull/146))
+* Releases 0.7.2 for cats 1.0.1 with #146 ([#147](https://github.com/47deg/fetch/pull/147))
+
+
+## 11/21/2017 - Version 0.7.1
+
+Release changes:
+
+* Cleanup CHANGELOG after failed release ([#141](https://github.com/47deg/fetch/pull/141))
+* Upgrades to cats 1.0.0-RC1 ([#143](https://github.com/47deg/fetch/pull/143))
+
+
+## 10/06/2017 - Version 0.7.0
+
+Release changes:
+
+* Update dependencies (Cats 1.0.0-MF) ([#137](https://github.com/47deg/fetch/pull/137))
+* update name of twitter module ([#138](https://github.com/47deg/fetch/pull/138))
+* Release Fetch v0.7.0 ([#139](https://github.com/47deg/fetch/pull/139))
+* Release 0.7.0 ([#140](https://github.com/47deg/fetch/pull/140))
+
+
+## 08/22/2017 - Version 0.6.3
+
+Release changes:
+
+* Add timeout capability to Future implementation of FetchMonadError ([#127](https://github.com/47deg/fetch/pull/127))
+* adds commercial support statement ([#129](https://github.com/47deg/fetch/pull/129))
+* Add twitter future support ([#128](https://github.com/47deg/fetch/pull/128))
+* Enforce consistent arrow symbols using scalafmt ([#130](https://github.com/47deg/fetch/pull/130))
+* Generalize timeout tests. Fix twitter timeout. ([#131](https://github.com/47deg/fetch/pull/131))
+* Move and reuse TestHelper ([#132](https://github.com/47deg/fetch/pull/132))
+* Release v0.6.3 ([#133](https://github.com/47deg/fetch/pull/133))
+* Change delay in flaky timeout test ([#134](https://github.com/47deg/fetch/pull/134))
+
+
 ## 06/01/2017 - Version 0.6.2
 
 Release changes:
@@ -80,4 +136,4 @@ Date: 2016-05-20
 
 Date: 2016-05-19
 
-- First relase.
+- First release.

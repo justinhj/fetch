@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2017 47 Degrees, LLC. <http://www.47deg.com>
+ * Copyright 2016-2018 47 Degrees, LLC. <http://www.47deg.com>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,19 +16,15 @@
 
 package fetch
 
-import scala.concurrent._
-import scala.concurrent.duration._
-
-import org.scalatest._
-
-import cats.MonadError
+import scala.concurrent.{ExecutionContext, Future}
+import org.scalatest.{AsyncFreeSpec, Matchers}
 import cats.data.NonEmptyList
 import cats.instances.list._
-
+import cats.syntax.semigroupal._
+import cats.syntax.foldable._
+import cats.syntax.apply._
 import fetch._
 import fetch.implicits._
-import cats.syntax.cartesian._
-import cats.syntax.foldable._
 
 class FetchBatchingTests extends AsyncFreeSpec with Matchers {
   import TestHelper._

@@ -15,13 +15,13 @@ For Scala 2.11.x and 2.12.x:
 [comment]: # (Start Replace)
 
 ```scala
-"com.47deg" %% "fetch" % "0.6.2"
+"com.47deg" %% "fetch" % "0.7.3"
 ```
 
 Or, if using Scala.js (0.6.x):
 
 ```scala
-"com.47deg" %%% "fetch" % "0.6.2"
+"com.47deg" %%% "fetch" % "0.7.3"
 ```
 
 [comment]: # (End Replace)
@@ -75,16 +75,16 @@ implicit object ToStringSource extends DataSource[Int, String]{
   override def name = "ToString"
 
   override def fetchOne(id: Int): Query[Option[String]] = {
-    Query.sync({
+    Query.sync {
       println(s"[${Thread.currentThread.getId}] One ToString $id")
       Option(id.toString)
-    })
+    }
   }
   override def fetchMany(ids: NonEmptyList[Int]): Query[Map[Int, String]] = {
-    Query.sync({
+    Query.sync {
       println(s"[${Thread.currentThread.getId}] Many ToString $ids")
       ids.toList.map(i => (i, i.toString)).toMap
-    })
+    }
   }
 }
 
@@ -123,9 +123,9 @@ As you can see in the previous example, the `ToStringSource` is queried once to 
 Multiple fetches to the same data source are automatically batched. For illustrating it, we are going to compose three independent fetch results as a tuple.
 
 ```tut:silent
-import cats.syntax.cartesian._
+import cats.syntax.apply._
 
-val fetchThree: Fetch[(String, String, String)] = (fetchString(1) |@| fetchString(2) |@| fetchString(3)).tupled
+val fetchThree: Fetch[(String, String, String)] = (fetchString(1), fetchString(2), fetchString(3)).tupled
 ```
 
 When executing the above fetch, note how the three identities get batched and the data source is only queried once.
@@ -164,7 +164,7 @@ def fetchLength(s: String): Fetch[Int] = Fetch(s)
 And now we can easily receive data from the two sources in a single fetch.
 
 ```tut:silent
-val fetchMulti: Fetch[(String, Int)] = (fetchString(1) |@| fetchLength("one")).tupled
+val fetchMulti: Fetch[(String, Int)] = (fetchString(1), fetchLength("one")).tupled
 ```
 
 Note how the two independent data fetches run in parallel, minimizing the latency cost of querying the two data sources.

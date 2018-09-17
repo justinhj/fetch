@@ -20,9 +20,10 @@ object ProjectPlugin extends AutoPlugin {
     lazy val commonCrossDependencies: Seq[ModuleID] =
       Seq(%%("cats-free"), %%("scalatest") % "test")
 
-    lazy val monixCrossDependencies: Seq[ModuleID] = Seq(%%("monix-eval"), %%("monix-cats"))
+    lazy val monixCrossDependencies: Seq[ModuleID] =
+      %%("monix-eval") :: Nil
 
-    lazy val twitterUtilDependencies: Seq[ModuleID] = Seq(%%("catbird-util"))
+    lazy val twitterUtilDependencies: Seq[ModuleID] = Seq(%%("catbird-util", "18.1.0"))
 
     lazy val micrositeSettings: Seq[Def.Setting[_]] = Seq(
       micrositeName := "Fetch",
@@ -64,8 +65,8 @@ object ProjectPlugin extends AutoPlugin {
 
     lazy val examplesSettings: Seq[Def.Setting[_]] = libraryDependencies ++= Seq(
       %%("circe-generic"),
-      %%("doobie-core-cats"),
-      %%("doobie-h2-cats"),
+      %%("doobie-core"),
+      %%("doobie-h2"),
       %%("http4s-blaze-client"),
       %%("http4s-circe")
     ) ++ commonCrossDependencies
@@ -106,7 +107,7 @@ object ProjectPlugin extends AutoPlugin {
           ScalaJSBadge.apply(_),
           GitHubIssuesBadge.apply(_)
         ),
-        orgSupportedScalaJSVersion := Some("0.6.15"),
+        orgSupportedScalaJSVersion := Some("0.6.20"),
         orgScriptTaskListSetting := List(
           orgValidateFiles.asRunnableItem,
           "validateDocs".asRunnableItemFull,
@@ -114,8 +115,8 @@ object ProjectPlugin extends AutoPlugin {
         ),
         orgUpdateDocFilesSetting += baseDirectory.value / "tut",
         scalaOrganization := "org.scala-lang",
-        scalaVersion := "2.12.2",
-        crossScalaVersions := List("2.11.11", "2.12.2"),
+        scalaVersion := "2.12.6",
+        crossScalaVersions := List("2.11.12", "2.12.6"),
         resolvers += Resolver.sonatypeRepo("snapshots"),
         scalacOptions := Seq(
           "-unchecked",
@@ -124,7 +125,8 @@ object ProjectPlugin extends AutoPlugin {
           "-Ywarn-dead-code",
           "-language:higherKinds",
           "-language:existentials",
-          "-language:postfixOps"
+          "-language:postfixOps",
+          "-Ypartial-unification"
         ),
         ScoverageKeys.coverageFailOnMinimum := false
       ) ++ shellPromptSettings
