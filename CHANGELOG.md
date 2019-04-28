@@ -1,5 +1,40 @@
 # Changelog
 
+## 02/26/2019 - Version 1.0.0
+
+The 1.0.0 release of Fetch is a redesign of the library in terms of `cats-effect` abstractions. It's a backwards-incompatible release that introduces numerous breaking changes as well as a couple of new features. It now should be easier to use and require less work from the user of the library, specially when you are already using `cats-effect`.
+
+### Breaking changes
+
+- Introduced the `Data` typeclass to identify requests to a data source
+- Redesigned `DataSource` to take an extra `F[_]` type parameter
+  + Renamed `fetchOne` to `fetch` and `fetchMany` to `batch`
+  + Data sources now can be implicitly constructed
+  + Automatic parallel implementation of `DataSource#batch` in terms of `ConcurrentEffect[F]`
+- Removed `FetchMonadError`, a Fetch is now interpreted to a `ConcurrentEffect`
+- Removed `Query`, a data source now returns a `F` that has an implicit `ConcurrentEffect[F]`
+- Renamed `DataSourceCache` to `DataCache`, it now takes a `Data` instance as a parameter for insert and lookup and is parameterised to F
+- Renamed `Env` to `Log`
+
+### New features
+
+- Introduced `Fetch#optional`, an alternative to `Fetch#apply` for optional fetches
+- Different Data Sources now can have the same identity and result types
+
+### API changes
+
+- `Fetch#run` now requires a `Timer[F]` and `ContextShift[F]` from `cats-effect`
+- `Fetch#apply` no longer requires an implicit `DataSource` and must be passed explicitly
+- Renamed `Fetch#runEnv` to `Fetch#runLog`
+- `Fetch#traverse`, `Fetch#sequence`, `Fetch#join` & `Fetch#collect` deleted in favor of usign cats typeclass ops
+
+### Documentation
+
+- Proof-of-concept Redis cache implementation of `DataCache` ([#161](https://github.com/47deg/fetch/pull/161))
+- Removed Monix, Future and Twitter Future subprojects, most of them should work with `cats-effect` abstractions already
+- GrapQL query interpreter example ([#178](https://github.com/47deg/fetch/pull/178))
+- Example using Monix Scheduler and Task to run fetches ([#178](https://github.com/47deg/fetch/pull/178))
+
 ## 08/21/2018 - Version 0.7.3
 
 Release changes:

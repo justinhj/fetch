@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2018 47 Degrees, LLC. <http://www.47deg.com>
+ * Copyright 2016-2019 47 Degrees, LLC. <http://www.47deg.com>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,44 +16,23 @@
 
 package fetch
 
+import cats._
+import cats.effect._
+
 object syntax {
 
   /** Implicit syntax to lift any value to the context of Fetch via pure */
   implicit class FetchIdSyntax[A](val a: A) extends AnyVal {
 
-    def fetch: Fetch[A] =
-      Fetch.pure(a)
+    def fetch[F[_] : Concurrent]: Fetch[F, A] =
+      Fetch.pure[F, A](a)
   }
 
   /** Implicit syntax to lift exception to Fetch errors */
-  implicit class FetchExceptionSyntax(val a: Throwable) extends AnyVal {
+  implicit class FetchExceptionSyntax[B](val a: Throwable) extends AnyVal {
 
-    def fetch[B]: Fetch[B] =
-      Fetch.error[B](a)
-  }
-
-  /** Implicit syntax for Fetch ops in Free based Fetches */
-  implicit class FetchSyntax[A](val fa: Fetch[A]) extends AnyVal {
-
-    def join[B](fb: Fetch[B]): Fetch[(A, B)] =
-      Fetch.join(fa, fb)
-
-    def runF[M[_]: FetchMonadError]: M[(FetchEnv, A)] =
-      Fetch.runFetch[M](fa, InMemoryCache.empty)
-
-    def runE[M[_]: FetchMonadError]: M[FetchEnv] =
-      Fetch.runEnv[M](fa, InMemoryCache.empty)
-
-    def runA[M[_]: FetchMonadError]: M[A] =
-      Fetch.run[M](fa, InMemoryCache.empty)
-
-    def runF[M[_]: FetchMonadError](cache: DataSourceCache): M[(FetchEnv, A)] =
-      Fetch.runFetch[M](fa, cache)
-
-    def runE[M[_]: FetchMonadError](cache: DataSourceCache): M[FetchEnv] =
-      Fetch.runEnv[M](fa, cache)
-
-    def runA[M[_]: FetchMonadError](cache: DataSourceCache): M[A] =
-      Fetch.run[M](fa, cache)
+    def fetch[F[_] : Concurrent]: Fetch[F, B] =
+      Fetch.error[F, B](a)
   }
 }
+

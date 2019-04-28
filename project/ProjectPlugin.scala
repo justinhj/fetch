@@ -17,13 +17,11 @@ object ProjectPlugin extends AutoPlugin {
 
   object autoImport {
 
-    lazy val commonCrossDependencies: Seq[ModuleID] =
-      Seq(%%("cats-free"), %%("scalatest") % "test")
-
-    lazy val monixCrossDependencies: Seq[ModuleID] =
-      %%("monix-eval") :: Nil
-
-    lazy val twitterUtilDependencies: Seq[ModuleID] = Seq(%%("catbird-util", "18.1.0"))
+    lazy val commonCrossDependencies =
+      Seq(
+		libraryDependencies ++=
+		Seq("org.typelevel" %% "cats-effect" % "1.2.0",
+            %%("scalatest") % "test"))
 
     lazy val micrositeSettings: Seq[Def.Setting[_]] = Seq(
       micrositeName := "Fetch",
@@ -43,7 +41,9 @@ object ProjectPlugin extends AutoPlugin {
         "gray-lighter"    -> "#F4F3F9",
         "white-color"     -> "#FFFFFF"
       ),
-      includeFilter in makeSite := "*.html" | "*.css" | "*.png" | "*.jpg" | "*.gif" | "*.js" | "*.swf" | "*.md"
+      includeFilter in makeSite := "*.html" | "*.css" | "*.png" | "*.jpg" | "*.gif" | "*.js" | "*.swf" | "*.md",
+      micrositeGithubToken := getEnvVar("ORG_GITHUB_TOKEN"),
+      micrositePushSiteWith := GitHub4s
     )
 
     lazy val commonTutSettings: Seq[Def.Setting[_]] = Seq(
@@ -63,13 +63,16 @@ object ProjectPlugin extends AutoPlugin {
       tutNameFilter := """README.md""".r
     )
 
-    lazy val examplesSettings: Seq[Def.Setting[_]] = libraryDependencies ++= Seq(
+    lazy val examplesSettings = Seq(libraryDependencies ++= Seq(
       %%("circe-generic"),
       %%("doobie-core"),
       %%("doobie-h2"),
-      %%("http4s-blaze-client"),
-      %%("http4s-circe")
-    ) ++ commonCrossDependencies
+      "org.tpolecat" %% "atto-core"    % "0.6.5",
+      "org.http4s" %% "http4s-blaze-client" % "0.19.0-M2",
+      "org.http4s" %% "http4s-circe" % "0.19.0-M2",
+      "redis.clients" % "jedis" % "2.9.0",
+      "io.monix" %% "monix" % "3.0.0-RC2"
+    )) ++ commonCrossDependencies
   }
 
   lazy val commandAliases: Seq[Def.Setting[_]] =
@@ -80,15 +83,11 @@ object ProjectPlugin extends AutoPlugin {
         "validateJVM",
         List(
           "fetchJVM/compile",
-          "monixJVM/compile",
-          "twitterJVM/compile",
           "fetchJVM/test",
-          "monixJVM/test",
-          "twitterJVM/test",
           "project root").asCmd) ++
       addCommandAlias(
         "validateJS",
-        List("fetchJS/compile", "monixJS/compile", "fetchJS/test", "monixJS/test", "project root").asCmd)
+        List("fetchJS/compile", "fetchJS/test", "project root").asCmd)
 
   override def projectSettings: Seq[Def.Setting[_]] =
     commandAliases ++
@@ -109,15 +108,17 @@ object ProjectPlugin extends AutoPlugin {
         ),
         orgSupportedScalaJSVersion := Some("0.6.20"),
         orgScriptTaskListSetting := List(
-          orgValidateFiles.asRunnableItem,
           "validateDocs".asRunnableItemFull,
           "validateCoverage".asRunnableItemFull
         ),
         orgUpdateDocFilesSetting += baseDirectory.value / "tut",
         scalaOrganization := "org.scala-lang",
-        scalaVersion := "2.12.6",
-        crossScalaVersions := List("2.11.12", "2.12.6"),
+        scalaVersion := "2.12.8",
+        crossScalaVersions := List("2.11.12", "2.12.8"),
         resolvers += Resolver.sonatypeRepo("snapshots"),
+        resolvers += Resolver.sonatypeRepo("releases"),
+        addCompilerPlugin("org.spire-math" %% "kind-projector" % "0.9.7"),
+        addCompilerPlugin("com.olegpy" %% "better-monadic-for" % "0.2.4"),
         scalacOptions := Seq(
           "-unchecked",
           "-deprecation",

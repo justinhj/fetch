@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2018 47 Degrees, LLC. <http://www.47deg.com>
+ * Copyright 2016-2019 47 Degrees, LLC. <http://www.47deg.com>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,57 +16,54 @@
 
 package fetch
 
-import cats.data.NonEmptyList
+import cats.{Functor, Monad}
+import cats.effect._
+import cats.data.{NonEmptyList, NonEmptyMap}
 import cats.instances.list._
 import cats.instances.option._
-import cats.syntax.functor._
-import cats.syntax.traverse._
+import cats.syntax.all._
+import cats.kernel.{Hash => H}
+
+/**
+ * `Data` is a trait used to identify and optimize access to a `DataSource`.
+ **/
+trait Data[I, A] { self =>
+  def name: String
+
+  def identity: Data.Identity =
+    H.fromUniversalHashCode.hash(self)
+}
+
+object Data {
+  type Identity = Int
+}
 
 /**
  * A `DataSource` is the recipe for fetching a certain identity `I`, which yields
- * results of type `A`.
+ * results of type `A` performing an effect of type `F[_]`.
  */
-trait DataSource[I, A] {
+trait DataSource[F[_], I, A] {
+  def data: Data[I, A]
 
-  /** The name of the data source.
-   */
-  def name: DataSourceName
-
-  override def toString: String = "DataSource:" + name
-
-  /**
-   * Derive a `DataSourceIdentity` from an identity, suitable for storing the result
-   * of such identity in a `DataSourceCache`.
-   */
-  def identity(i: I): DataSourceIdentity = (name, i)
+  implicit def CF: Concurrent[F]
 
   /** Fetch one identity, returning a None if it wasn't found.
    */
-  def fetchOne(id: I): Query[Option[A]]
+  def fetch(id: I): F[Option[A]]
 
   /** Fetch many identities, returning a mapping from identities to results. If an
    * identity wasn't found, it won't appear in the keys.
    */
-  def fetchMany(ids: NonEmptyList[I]): Query[Map[I, A]]
-
-  /** Use `fetchOne` for implementing of `fetchMany`. Use only when the data
-   * source doesn't support batching.
-   */
-  def batchingNotSupported(ids: NonEmptyList[I]): Query[Map[I, A]] = {
-    val fetchOneWithId: I => Query[Option[(I, A)]] = id =>
-      fetchOne(id).map(_.tupleLeft(id))
-
-    ids.toList.traverse(fetchOneWithId).map(_.collect { case Some(x) => x }.toMap)
-  }
-
-  def batchingOnly(id: I): Query[Option[A]] =
-    fetchMany(NonEmptyList.one(id)).map(_ get id)
+  def batch(ids: NonEmptyList[I]): F[Map[I, A]] =
+    FetchExecution.parallel(
+      ids.map(id => fetch(id).tupleLeft(id))
+    ).map(_.collect { case (id, Some(x)) => id -> x }.toMap)
 
   def maxBatchSize: Option[Int] = None
 
-  def batchExecution: ExecutionType = Parallel
+  def batchExecution: BatchExecution = InParallel
 }
 
-sealed trait ExecutionType extends Product with Serializable
-case object Sequential     extends ExecutionType
-case object Parallel       extends ExecutionType
+sealed trait BatchExecution extends Product with Serializable
+case object Sequentially extends BatchExecution
+case object InParallel   extends BatchExecution

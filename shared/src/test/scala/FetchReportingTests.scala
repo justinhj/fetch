@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2018 47 Degrees, LLC. <http://www.47deg.com>
+ * Copyright 2016-2019 47 Degrees, LLC. <http://www.47deg.com>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,123 +16,119 @@
 
 package fetch
 
-import scala.concurrent.{ExecutionContext, Future}
-import org.scalatest.{AsyncFreeSpec, Matchers}
+import cats.effect._
 import cats.instances.list._
-import fetch._
-import fetch.implicits._
+import cats.syntax.all._
 
-class FetchReportingTests extends AsyncFreeSpec with Matchers {
+class FetchReportingTests extends FetchSpec {
   import TestHelper._
 
-  val ME = FetchMonadError[Future]
-
-  implicit override def executionContext = ExecutionContext.Implicits.global
-
   "Plain values have no rounds of execution" in {
-    val fetch: Fetch[Int] = Fetch.pure(42)
-    Fetch.runEnv[Future](fetch).map(_.rounds.size shouldEqual 0)
+    def fetch[F[_] : ConcurrentEffect] =
+      Fetch.pure[F, Int](42)
+
+    val io = Fetch.runLog[IO](fetch)
+
+    io.map({
+      case (log, result) => log.rounds.size shouldEqual 0
+    }).unsafeToFuture
   }
 
   "Single fetches are executed in one round" in {
-    val fetch = one(1)
-    Fetch.runEnv[Future](fetch).map(_.rounds.size shouldEqual 1)
+    def fetch[F[_] : ConcurrentEffect] =
+      one(1)
+
+    val io = Fetch.runLog[IO](fetch)
+
+    io.map({
+      case (log, result) => log.rounds.size shouldEqual 1
+    }).unsafeToFuture
   }
 
   "Single fetches are executed in one round per binding in a for comprehension" in {
-    val fetch = for {
+    def fetch[F[_] : ConcurrentEffect] = for {
       o <- one(1)
       t <- one(2)
     } yield (o, t)
 
-    Fetch.runEnv[Future](fetch).map(_.rounds.size shouldEqual 2)
+    val io = Fetch.runLog[IO](fetch)
+
+    io.map({
+      case (log, result) => log.rounds.size shouldEqual 2
+    }).unsafeToFuture
   }
 
   "Single fetches for different data sources are executed in multiple rounds if they are in a for comprehension" in {
-    val fetch: Fetch[(Int, List[Int])] = for {
+    def fetch[F[_] : ConcurrentEffect] = for {
       o <- one(1)
       m <- many(3)
     } yield (o, m)
 
-    Fetch.runEnv[Future](fetch).map(_.rounds.size shouldEqual 2)
+    val io = Fetch.runLog[IO](fetch)
+
+    io.map({
+      case (log, result) => log.rounds.size shouldEqual 2
+    }).unsafeToFuture
   }
 
   "Single fetches combined with cartesian are run in one round" in {
-    import cats.syntax.apply._
+    def fetch[F[_] : ConcurrentEffect] =
+      (one(1), many(3)).tupled
 
-    val fetch: Fetch[(Int, List[Int])] = (one(1), many(3)).tupled
-    val fut                            = Fetch.runEnv[Future](fetch)
+    val io = Fetch.runLog[IO](fetch)
 
-    fut.map(_.rounds.size shouldEqual 1)
+    io.map({
+      case (log, result) => log.rounds.size shouldEqual 1
+    }).unsafeToFuture
   }
 
   "Single fetches combined with traverse are run in one round" in {
-    import cats.syntax.traverse._
-
-    val fetch: Fetch[List[Int]] = for {
-      manies <- many(3)
-      ones   <- manies.traverse(one)
+    def fetch[F[_] : ConcurrentEffect] = for {
+      manies <- many(3)                 // round 1
+      ones   <- manies.traverse(one[F]) // round 2
     } yield ones
 
-    val fut = Fetch.runEnv[Future](fetch)
-    fut.map(_.rounds.size shouldEqual 2)
+    val io = Fetch.runLog[IO](fetch)
+
+    io.map({
+      case (log, result) => log.rounds.size shouldEqual 2
+    }).unsafeToFuture
   }
 
   "The product of two fetches from the same data source implies batching" in {
-    val fetch: Fetch[(Int, Int)] = Fetch.join(one(1), one(3))
+    def fetch[F[_] : ConcurrentEffect] =
+      (one(1), one(3)).tupled
 
-    Fetch
-      .runEnv[Future](fetch)
-      .map(env => {
-        env.rounds.size shouldEqual 1
-      })
+    val io = Fetch.runLog[IO](fetch)
+
+    io.map({
+      case (log, result) => log.rounds.size shouldEqual 1
+    }).unsafeToFuture
   }
 
   "The product of concurrent fetches of the same type implies everything fetched in batches" in {
-    val fetch = Fetch.join(
-      Fetch.join(
-        for {
-          a <- one(1)
-          b <- one(2)
-          c <- one(3)
-        } yield c,
-        for {
-          a <- one(2)
-          m <- many(4)
-          c <- one(3)
-        } yield c
-      ),
-      one(3)
-    )
+    def aFetch[F[_] : ConcurrentEffect] = for {
+      a <- one(1)  // round 1 (batched)
+      b <- one(2)  // round 2 (cached)
+      c <- one(3)  // round 3 (deduplicated)
+    } yield c
 
-    Fetch
-      .runEnv[Future](fetch)
-      .map(env => {
-        env.rounds.size shouldEqual 2
-      })
-  }
+    def anotherFetch[F[_] : ConcurrentEffect] = for {
+      a <- one(2)  // round 1 (batched)
+      m <- many(4) // round 2
+      c <- one(3)  // round 3 (deduplicated)
+    } yield c
 
-  "Every level of sequenced concurrent of concurrent fetches is batched" in {
-    val fetch = Fetch.join(
-      Fetch.join(
-        for {
-          a <- Fetch.sequence(List(one(2), one(3), one(4)))
-          b <- Fetch.sequence(List(many(0), many(1)))
-          c <- Fetch.sequence(List(one(9), one(10), one(11)))
-        } yield c,
-        for {
-          a <- Fetch.sequence(List(one(5), one(6), one(7)))
-          b <- Fetch.sequence(List(many(2), many(3)))
-          c <- Fetch.sequence(List(one(12), one(13), one(14)))
-        } yield c
-      ),
-      Fetch.sequence(List(one(15), one(16), one(17)))
-    )
+    def fetch[F[_] : ConcurrentEffect] =
+      ((aFetch, anotherFetch).tupled, one(3)).tupled
 
-    Fetch
-      .runEnv[Future](fetch)
-      .map(env => {
-        env.rounds.size shouldEqual 3
-      })
+    val io = Fetch.runLog[IO](fetch)
+
+    io.map({
+      case (log, result) =>
+        log.rounds.size shouldEqual 2
+        totalBatches(log.rounds) shouldEqual 1
+        totalFetched(log.rounds) shouldEqual 3 + 1
+    }).unsafeToFuture
   }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2018 47 Degrees, LLC. <http://www.47deg.com>
+ * Copyright 2016-2019 47 Degrees, LLC. <http://www.47deg.com>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,129 +16,175 @@
 
 package fetch
 
-import scala.concurrent.{ExecutionContext, Future}
-import org.scalatest.{AsyncFreeSpec, Matchers}
+import cats._
 import cats.data.NonEmptyList
 import cats.instances.list._
-import cats.syntax.semigroupal._
-import cats.syntax.foldable._
-import cats.syntax.apply._
-import fetch._
-import fetch.implicits._
+import cats.syntax.all._
+import cats.effect._
 
-class FetchBatchingTests extends AsyncFreeSpec with Matchers {
+import fetch._
+
+class FetchBatchingTests extends FetchSpec {
   import TestHelper._
 
-  implicit override def executionContext = ExecutionContext.Implicits.global
-
   case class BatchedDataSeq(id: Int)
-  implicit object MaxBatchSourceSeq extends DataSource[BatchedDataSeq, Int] {
-    override def name = "BatchSourceSeq"
 
-    override def fetchOne(id: BatchedDataSeq): Query[Option[Int]] =
-      Query.sync(Some(id.id))
+  object SeqBatch extends Data[BatchedDataSeq, Int] {
+    def name = "Sequential batching"
 
-    override def fetchMany(ids: NonEmptyList[BatchedDataSeq]): Query[Map[BatchedDataSeq, Int]] =
-      Query.sync(ids.toList.map(one => (one, one.id)).toMap)
+    implicit def source[F[_] : ConcurrentEffect]: DataSource[F, BatchedDataSeq, Int] = new DataSource[F, BatchedDataSeq, Int] {
+      override def data = SeqBatch
 
-    override val maxBatchSize = Some(2)
+      override def CF = ConcurrentEffect[F]
 
-    override val batchExecution = Sequential
+      override def fetch(id: BatchedDataSeq): F[Option[Int]] =
+        CF.pure(Some(id.id))
+
+      override val maxBatchSize = Some(2)
+
+      override val batchExecution = Sequentially
+    }
   }
 
   case class BatchedDataPar(id: Int)
-  implicit object MaxBatchSourcePar extends DataSource[BatchedDataPar, Int] {
-    override def name = "BatchSourcePar"
 
-    override def fetchOne(id: BatchedDataPar): Query[Option[Int]] =
-      Query.sync(Some(id.id))
+  object ParBatch extends Data[BatchedDataPar, Int] {
+    def name = "Parallel batching"
 
-    override def fetchMany(ids: NonEmptyList[BatchedDataPar]): Query[Map[BatchedDataPar, Int]] =
-      Query.sync(ids.toList.map(one => (one, one.id)).toMap)
+    implicit def source[F[_] : ConcurrentEffect]: DataSource[F, BatchedDataPar, Int] = new DataSource[F, BatchedDataPar, Int] {
+      override def data = ParBatch
 
-    override val maxBatchSize = Some(2)
+      override def CF = ConcurrentEffect[F]
 
-    override val batchExecution = Parallel
+      override def fetch(id: BatchedDataPar): F[Option[Int]] =
+        CF.pure(Some(id.id))
+
+      override val maxBatchSize = Some(2)
+
+      override val batchExecution = InParallel
+    }
   }
 
-  def fetchBatchedDataSeq(id: Int): Fetch[Int] = Fetch(BatchedDataSeq(id))
-  def fetchBatchedDataPar(id: Int): Fetch[Int] = Fetch(BatchedDataPar(id))
+  def fetchBatchedDataSeq[F[_] : ConcurrentEffect](id: Int): Fetch[F, Int] =
+    Fetch(BatchedDataSeq(id), SeqBatch.source)
+
+  def fetchBatchedDataPar[F[_] : ConcurrentEffect](id: Int): Fetch[F, Int] =
+    Fetch(BatchedDataPar(id), ParBatch.source)
 
   "A large fetch to a datasource with a maximum batch size is split and executed in sequence" in {
-    val fetch: Fetch[List[Int]] = Fetch.traverse(List.range(1, 6))(fetchBatchedDataSeq)
-    Fetch.runFetch[Future](fetch).map {
-      case (env, res) =>
-        res shouldEqual List(1, 2, 3, 4, 5)
-        totalFetched(env.rounds) shouldEqual 5
-        totalBatches(env.rounds) shouldEqual 2
-        env.rounds.size shouldEqual 3
-    }
+    def fetch[F[_] : ConcurrentEffect]: Fetch[F, List[Int]] =
+      List.range(1, 6).traverse(fetchBatchedDataSeq[F])
+
+    val io = Fetch.runLog[IO](fetch)
+
+    io.map({
+      case (log, result) => {
+        result shouldEqual List(1, 2, 3, 4, 5)
+        log.rounds.size shouldEqual 1
+        totalFetched(log.rounds) shouldEqual 5
+        totalBatches(log.rounds) shouldEqual 3
+      }
+    }).unsafeToFuture
   }
 
   "A large fetch to a datasource with a maximum batch size is split and executed in parallel" in {
-    val fetch: Fetch[List[Int]] = Fetch.traverse(List.range(1, 6))(fetchBatchedDataPar)
-    Fetch.runFetch[Future](fetch).map {
-      case (env, res) =>
-        res shouldEqual List(1, 2, 3, 4, 5)
-        totalFetched(env.rounds) shouldEqual 5
-        totalBatches(env.rounds) shouldEqual 2
-        env.rounds.size shouldEqual 1
-    }
+    def fetch[F[_] : ConcurrentEffect]: Fetch[F, List[Int]] =
+      List.range(1, 6).traverse(fetchBatchedDataPar[F])
+
+    val io = Fetch.runLog[IO](fetch)
+
+    io.map({
+      case (log, result) => {
+        result shouldEqual List(1, 2, 3, 4, 5)
+        log.rounds.size shouldEqual 1
+        totalFetched(log.rounds) shouldEqual 5
+        totalBatches(log.rounds) shouldEqual 3
+      }
+    }).unsafeToFuture
   }
 
-  "Fetches to datasources with a maximum batch size should be split and executed in parallel and sequentially" in {
-    val fetch: Fetch[List[Int]] =
-      Fetch.traverse(List.range(1, 6))(fetchBatchedDataPar) *>
-        Fetch.traverse(List.range(1, 6))(fetchBatchedDataSeq)
+  "Fetches to datasources with a maximum batch size should be split and executed in parallel and sequentially when using productR" in {
+    def fetch[F[_] : ConcurrentEffect]: Fetch[F, List[Int]] =
+      List.range(1, 6).traverse(fetchBatchedDataPar[F]) *>
+        List.range(1, 6).traverse(fetchBatchedDataSeq[F])
 
-    Fetch.runFetch[Future](fetch).map {
-      case (env, res) =>
-        res shouldEqual List(1, 2, 3, 4, 5)
-        totalFetched(env.rounds) shouldEqual 5 + 5
-        totalBatches(env.rounds) shouldEqual 2 + 2
-        env.rounds.size shouldEqual 3
-    }
+    val io = Fetch.runLog[IO](fetch)
+
+    io.map({
+      case (log, result) => {
+        result shouldEqual List(1, 2, 3, 4, 5)
+        log.rounds.size shouldEqual 1
+        totalFetched(log.rounds) shouldEqual 5 + 5
+        totalBatches(log.rounds) shouldEqual 3 + 3
+      }
+    }).unsafeToFuture
+  }
+
+  "Fetches to datasources with a maximum batch size should be split and executed in parallel and sequentially when using productL" in {
+    def fetch[F[_] : ConcurrentEffect]: Fetch[F, List[Int]] =
+      List.range(1, 6).traverse(fetchBatchedDataPar[F]) <*
+        List.range(1, 6).traverse(fetchBatchedDataSeq[F])
+
+    val io = Fetch.runLog[IO](fetch)
+
+    io.map({
+      case (log, result) => {
+        result shouldEqual List(1, 2, 3, 4, 5)
+        log.rounds.size shouldEqual 1
+        totalFetched(log.rounds) shouldEqual 5 + 5
+        totalBatches(log.rounds) shouldEqual 3 + 3
+      }
+    }).unsafeToFuture
   }
 
   "A large (many) fetch to a datasource with a maximum batch size is split and executed in sequence" in {
-    val fetch: Fetch[List[Int]] =
-      Fetch.multiple(BatchedDataSeq(1), BatchedDataSeq(2), BatchedDataSeq(3))
-    Fetch.runFetch[Future](fetch).map {
-      case (env, res) =>
-        res shouldEqual List(1, 2, 3)
-        totalFetched(env.rounds) shouldEqual 3
-        totalBatches(env.rounds) shouldEqual 2 // FetchMany(NEL(1, 2)) and FetchMany(NEL(3))
-        env.rounds.size shouldEqual 2
-    }
+    def fetch[F[_] : ConcurrentEffect]: Fetch[F, List[Int]] =
+      List(fetchBatchedDataSeq[F](1), fetchBatchedDataSeq[F](2), fetchBatchedDataSeq[F](3)).sequence
+
+    val io = Fetch.runLog[IO](fetch)
+
+    io.map({
+      case (log, result) => {
+        result shouldEqual List(1, 2, 3)
+        log.rounds.size shouldEqual 1
+        totalFetched(log.rounds) shouldEqual 3
+        totalBatches(log.rounds) shouldEqual 2
+      }
+    }).unsafeToFuture
   }
 
   "A large (many) fetch to a datasource with a maximum batch size is split and executed in parallel" in {
-    val fetch: Fetch[List[Int]] =
-      Fetch.multiple(BatchedDataPar(1), BatchedDataPar(2), BatchedDataPar(3))
-    Fetch.runFetch[Future](fetch).map {
-      case (env, res) =>
-        res shouldEqual List(1, 2, 3)
-        totalFetched(env.rounds) shouldEqual 3
-        totalBatches(env.rounds) shouldEqual 1
-        env.rounds.size shouldEqual 1
-    }
+    def fetch[F[_] : ConcurrentEffect]: Fetch[F, List[Int]] =
+      List(fetchBatchedDataPar[F](1), fetchBatchedDataPar[F](2), fetchBatchedDataPar[F](3)).sequence
+
+    val io = Fetch.runLog[IO](fetch)
+
+    io.map({
+      case (log, result) => {
+        result shouldEqual List(1, 2, 3)
+        log.rounds.size shouldEqual 1
+        totalFetched(log.rounds) shouldEqual 3
+        totalBatches(log.rounds) shouldEqual 2
+      }
+    }).unsafeToFuture
   }
 
   "Very deep fetches don't overflow stack or heap" in {
-    import cats.syntax.traverse._
-    import cats.syntax.flatMap._
-
     val depth = 200
     val list  = (1 to depth).toList
-    val fetch: Fetch[List[Int]] = list
-      .map(x => (0 until x).toList.traverse(fetchBatchedDataSeq))
-      .foldLeft(Fetch.pure(List.empty[Int]))(_ >> _)
+    def fetch[F[_] : ConcurrentEffect]: Fetch[F, List[Int]] =
+      list.map(x => (0 until x).toList.traverse(fetchBatchedDataSeq[F]))
+        .foldLeft(
+          Fetch.pure[F, List[Int]](List.empty[Int])
+        )(_ >> _)
 
-    Fetch.runFetch[Future](fetch).map {
-      case (env, res) =>
-        res shouldEqual (0 until depth).toList
-        totalFetched(env.rounds) shouldEqual depth
-        env.rounds.size shouldEqual depth
-    }
+    val io = Fetch.runLog[IO](fetch)
+
+    io.map({
+      case (log, result) => {
+        result shouldEqual (0 until depth).toList
+        log.rounds.size shouldEqual depth
+      }
+    }).unsafeToFuture
   }
 }

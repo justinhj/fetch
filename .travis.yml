@@ -2,10 +2,12 @@ language: scala
 
 scala:
 - 2.11.12
-- 2.12.6
+- 2.12.8
 
 jdk:
+- oraclejdk9
 - oraclejdk8
+- openjdk8
 
 before_install:
 - if [ "$TRAVIS_BRANCH" = "master" -a "$TRAVIS_PULL_REQUEST" = "false" ]; then openssl aes-256-cbc
@@ -14,15 +16,21 @@ before_install:
 - export PATH=${PATH}:./vendor/bundle
 
 install:
-- rvm use 2.2.8 --install --fuzzy
-- gem update --system
+- rvm use 2.3.0 --install --fuzzy
 - gem install sass
 - gem install jekyll -v 3.2.1
 
 script:
 - sbt ++$TRAVIS_SCALA_VERSION orgScriptCI
-- sbt 'examples/test'
+- sbt 'examples/test:compile'
 
-after_success:
-- bash <(curl -s https://codecov.io/bash)
-- sbt ++$TRAVIS_SCALA_VERSION orgAfterCISuccess
+jobs:
+  include:
+    - stage: deploy
+      script:
+        - bash <(curl -s https://codecov.io/bash)
+        - sbt ++$TRAVIS_SCALA_VERSION orgAfterCISuccess
+      scala: 2.12.8
+
+services:
+- redis-server

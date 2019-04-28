@@ -1,5 +1,5 @@
 /*
- * Copyright 2016-2018 47 Degrees, LLC. <http://www.47deg.com>
+ * Copyright 2016-2019 47 Degrees, LLC. <http://www.47deg.com>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,20 +16,16 @@
 
 package fetch
 
-import scala.concurrent.{ExecutionContext, Future}
-import org.scalatest.{AsyncFlatSpec, Matchers}
-import fetch.implicits._
+import cats.data.NonEmptyList
+import cats.effect._
+import cats.syntax.all._
 
-// Note that this test cannot run on Scala.js
-
-class FutureTimeoutTests
-    extends AsyncFlatSpec
-    with Matchers
-    with FetchMonadErrorTimeoutSpec[Future] {
-
-  implicit override val executionContext: ExecutionContext = ExecutionContext.Implicits.global
-
-  def runAsFuture[A](fa: Future[A]): Future[A] = fa
-
-  def fetchMonadError: FetchMonadError[Future] = FetchMonadError[Future]
+private object FetchExecution {
+  def parallel[F[_], A](effects: NonEmptyList[F[A]])(
+    implicit CF: Concurrent[F]
+  ): F[NonEmptyList[A]] =
+    effects.traverse(CF.start(_)).flatMap(fibers =>
+      fibers.traverse(_.join).onError({ case _ => fibers.traverse_(_.cancel) })
+    )
 }
+
